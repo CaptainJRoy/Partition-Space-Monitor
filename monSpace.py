@@ -1,9 +1,9 @@
 import netsnmp, thread, time
 import curses
 
-
 SESSION = 0
 hrPartitionLabel = 0
+prev_pct = {}
 
 DICT = {}
 REFRESH_TIME = 5
@@ -15,9 +15,11 @@ def init_session():
     commands and the list from which it start the iteration of every partition,
     it has no arguments and no return values
     """
-    global SESSION, hrPartitionLabel
+    global SESSION, hrPartitionLabel, prev_pct
     SESSION = netsnmp.Session(Version = 2)
     hrPartitionLabel = get_values('hrPartitionLabel')
+    for i in hrPartitionLabel:
+        prev_pct[i] = 0
 
 def get_values(table):
     """
@@ -41,12 +43,19 @@ def get_next(value):
     resultlist = netsnmp.VarList(result)
     return SESSION.get(resultlist)[0]
 
+def normalize_rt():
+    global REFRESH_TIME
+    if REFRESH_TIME < 5:
+        REFRESH_TIME = 5
+    elif REFRESH_TIME > 1200:
+        REFRESH_TIME = 1200
+
 def populate_dictionary():
     """
         This function receives no arguments and returns no values, all it does
     is modify the current dictionary with the mesurements of every partition
     """
-    global hrPartitionLabel, DICT
+    global hrPartitionLabel, DICT, REFRESH_TIME, prev_pct
     DICT.clear()
     index = 1
     for i in hrPartitionLabel:
@@ -56,6 +65,9 @@ def populate_dictionary():
             fss_index = int(get_next('hrFSStorageIndex.' + str(fs_index)))
             storageSize = int(get_next('hrStorageSize.' + str(fss_index)))
             storageUsed = int(get_next('hrStorageUsed.' + str(fss_index)))
+            free_pct = ((storageSize - storageUsed) / float(storageSize)) * 100
+            pct_change = free_pct - prev_pct[i]
+            prev_pct[i] = free_pct
             DICT[i] = {
                 'hrPartitionFSIndex': int(hrPartitionFSIndex[index-1]),
                 'hrFSMountPoint'    : get_next('hrFSMountPoint.' + str(fs_index)),
@@ -64,7 +76,8 @@ def populate_dictionary():
                 'hrStorageSize'     : storageSize,
                 'hrStorageUsed'     : storageUsed,
                 'freeSpace'         : storageSize - storageUsed,
-                'freeSpacePct'      : ((storageSize - storageUsed) / float(storageSize)) * 100
+                'freeSpacePct'      : free_pct,
+                'pct_change'        : pct_change
             }
         index += 1
 
@@ -75,40 +88,44 @@ def center(x, string):
     return (x - len(str(string)))/2
 def adjust(value):
     if value < 1024:
-        return str(round(float(value), 2)) + ' Bytes'
+        return str(float(value)) + ' Bytes'
     elif value / 1024 < 1024:
-        return str(round(float(value/1024), 2)) + ' KBytes'
+        return str(float(value/1024)) + ' KBytes'
     elif value / 1024 / 1024 < 1024:
-        return str(round(float(value/1024/1024), 2)) + ' MBytes'
+        return str(float(value/1024/1024)) + ' MBytes'
     elif value / 1024 / 1024 / 1024 < 1024:
-        return str(round(float(value/1024/1024/1024), 2)) + ' GBytes'
+        return str(float(value/1024/1024/1024)) + ' GBytes'
     else:
-        return str(round(float(value/1024/1024/1024/1024), 2)) + ' TBytes'
+        return str(float(value/1024/1024/1024/1024)) + ' TBytes'
 def adjust_t(value):
     if value < 60:
-        return str(round(float(value), 2)) + ' seconds'
+        return str(round(value, 3)) + ' seconds'
     elif value / 60 < 60:
-        return str(round(float(value/60), 2)) + ' minutes'
+        return str(round(value/60, 3)) + ' minutes'
     else:
-        return str(round(float(value/60/60), 2)) + ' hours'
+        return str(round(value/60/60, 3)) + ' hours'
 
 def pbar(window):
     """
         Creates a fancy window on which we display the values
     """
-    global EXIT, REFRESH_TIME, DICT
+    global EXIT, REFRESH_TIME, DICT, prev_pct
     try:
         while not EXIT:
+            unchanged = True
             thread.start_new_thread(populate_dictionary, ( ))
-            time.sleep(REFRESH_TIME)
             y,x = window.getmaxyx()
 
             window.clear()
             window.border(0)
-            window.addstr(1, center(x, "partitions"), "Partitions")
+            window.addstr(1, center(x, "partitions"), "Partitions", curses.A_STANDOUT)
             printline = 3
             for i in DICT:
-                window.addstr(printline, center(x,str(i)), str(i))
+                window.addstr(printline, center(x,str(i)), str(i), curses.A_BOLD)
+
+                printline += 1
+                s = "Partition Mounting Point: " + str(DICT[i]['hrFSMountPoint'])
+                window.addstr(printline, center(x, s), s)
 
                 printline += 1
                 s = "Total Space: "
@@ -127,19 +144,39 @@ def pbar(window):
                 free = DICT[i]['freeSpace'] * DICT[i]['hrStorageAllUnits']
                 s += adjust(free)
                 free_pct = DICT[i]['freeSpacePct']
-                s += ' ['+ str(round(free_pct, 2)) + '%]'
-                window.addstr(printline, center(x, s), s)
+                s2 = ' ['+ str(round(free_pct,3)) + '%]'
+                window.addstr(printline, center(x, s+s2), s)
+                if free_pct < 15:
+                    window.addstr(printline, center(x, s+s2)+len(s), s2, curses.A_BLINK)
+                else:
+                    window.addstr(printline, center(x, s+s2)+len(s), s2)
 
+
+                printline += 1
+                s = "Percentage Change: "
+                pct_change = DICT[i]['pct_change']
+                s += ' ['+ str(round(pct_change, 5)) + '%]'
+                window.addstr(printline, center(x, s), s)
                 printline += 3
 
-            s = "Refreshing every " + adjust_t(REFRESH_TIME)
+                if free_pct < 15:
+                    REFRESH_TIME = 60
+                if unchanged:
+                    if pct_change < 0:
+                        REFRESH_TIME /= 2
+                    else:
+                        REFRESH_TIME *= 2
+                    unchanged = False
+                normalize_rt()
+
+            s = " Refreshing every " + adjust_t(REFRESH_TIME) + " "
             window.addstr(y-1, center(x, s), s)
             window.refresh()
+            time.sleep(REFRESH_TIME)
     except KeyboardInterrupt:
         EXIT = True
     except:
         print "Error occurred!"
-
 
 init_session()
 curses.wrapper(pbar)
