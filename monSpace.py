@@ -62,23 +62,26 @@ def populate_dictionary():
         hrPartitionFSIndex = get_values('hrPartitionFSIndex')
         fs_index = int(hrPartitionFSIndex[index-1])
         if fs_index > 0:
-            fss_index = int(get_next('hrFSStorageIndex.' + str(fs_index)))
-            storageSize = int(get_next('hrStorageSize.' + str(fss_index)))
-            storageUsed = int(get_next('hrStorageUsed.' + str(fss_index)))
-            free_pct = ((storageSize - storageUsed) / float(storageSize)) * 100
-            pct_change = free_pct - prev_pct[i]
-            prev_pct[i] = free_pct
-            DICT[i] = {
-                'hrPartitionFSIndex': int(hrPartitionFSIndex[index-1]),
-                'hrFSMountPoint'    : get_next('hrFSMountPoint.' + str(fs_index)),
-                'hrFSStorageIndex'  : fss_index,
-                'hrStorageAllUnits' : int(get_next('hrStorageAllocationUnits.' + str(fss_index))),
-                'hrStorageSize'     : storageSize,
-                'hrStorageUsed'     : storageUsed,
-                'freeSpace'         : storageSize - storageUsed,
-                'freeSpacePct'      : free_pct,
-                'pct_change'        : pct_change
-            }
+            try:
+                fss_index = int(get_next('hrFSStorageIndex.' + str(fs_index)))
+                storageSize = int(get_next('hrStorageSize.' + str(fss_index)))
+                storageUsed = int(get_next('hrStorageUsed.' + str(fss_index)))
+                free_pct = ((storageSize - storageUsed) / float(storageSize)) * 100
+                pct_change = free_pct - prev_pct[i]
+                prev_pct[i] = free_pct
+                DICT[i] = {
+                    'hrPartitionFSIndex': int(hrPartitionFSIndex[index-1]),
+                    'hrFSMountPoint'    : get_next('hrFSMountPoint.' + str(fs_index)),
+                    'hrFSStorageIndex'  : fss_index,
+                    'hrStorageAllUnits' : int(get_next('hrStorageAllocationUnits.' + str(fss_index))),
+                    'hrStorageSize'     : storageSize,
+                    'hrStorageUsed'     : storageUsed,
+                    'freeSpace'         : storageSize - storageUsed,
+                    'freeSpacePct'      : free_pct,
+                    'pct_change'        : pct_change
+                }
+            except:
+                pass
         index += 1
 
 """
