@@ -45,8 +45,8 @@ def get_next(value):
 
 def normalize_rt():
     global REFRESH_TIME
-    if REFRESH_TIME < 5:
-        REFRESH_TIME = 5
+    if REFRESH_TIME < 10:
+        REFRESH_TIME = 10
     elif REFRESH_TIME > 1200:
         REFRESH_TIME = 1200
 
@@ -81,6 +81,9 @@ def populate_dictionary():
                     'pct_change'        : pct_change
                 }
             except:
+                if i in DICT:
+                    del DICT[i]
+                prev_pct[i] = 0
                 pass
         index += 1
 
